@@ -21,8 +21,8 @@ window.botpress.on("webchat:ready", () => {
 	// 1. Pass logged-in PFA user context
 	if (window.PFA_USER) {
 		window.botpress.updateUser({
+			name: window.PFA_USER.name, // Top-level name property
 			data: {
-				name: window.PFA_USER.name,
 				company: window.PFA_USER.company,
 				roles: window.PFA_USER.roles,
 			},
