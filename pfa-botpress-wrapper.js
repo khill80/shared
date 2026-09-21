@@ -28,8 +28,8 @@ window.botpress.on("webchat:ready", async () => {
 			data: {
 				firstName: user.firstName,
 				company: user.company,
-				roles: user.roles,
-				regions: user.regions,
+				roles: JSON.stringify(user.roles ?? []),
+				regions: JSON.stringify(user.regions ?? []),
 			},
 		});
 
