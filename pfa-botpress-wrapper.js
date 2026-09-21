@@ -1,5 +1,5 @@
 // Function to capture dynamic DOM context on page load
-function getDOMSnapshot() {
+function getDetailedDOMSnapshot() {
 	const clean = (value) =>
 		String(value ?? "")
 			.replace(/\s+/g, " ")
@@ -138,6 +138,47 @@ function getDOMSnapshot() {
 			.map(describe)
 			.slice(0, 200),
 	};
+}
+
+function getDOMSnapshot() {
+	const snapshot = getDetailedDOMSnapshot();
+
+	// Remove the navbar label that repeats its menu contents.
+	snapshot.navigation = snapshot.navigation.map((nav) => ({
+		items: nav.items,
+	}));
+
+	function compact(value) {
+		if (Array.isArray(value)) {
+			return value.map(compact);
+		}
+
+		if (value && typeof value === "object") {
+			return Object.fromEntries(
+				Object.entries(value)
+					.filter(([key, val]) => {
+						if (val === null || val === undefined || val === "") {
+							return false;
+						}
+
+						// These omitted states mean false.
+						if (
+							["disabled", "ariaHidden", "required"].includes(key) &&
+							val === false
+						) {
+							return false;
+						}
+
+						return true;
+					})
+					.map(([key, val]) => [key, compact(val)]),
+			);
+		}
+
+		return value;
+	}
+
+	return compact(snapshot);
 }
 
 // Fire events once Botpress v3 Webchat is loaded and active
