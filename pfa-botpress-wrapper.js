@@ -17,23 +17,34 @@ function getDOMSnapshot() {
 }
 
 // Fire events once Botpress v3 Webchat is loaded and active
-window.botpress.on("webchat:ready", () => {
-	// 1. Pass logged-in PFA user context
-	if (window.PFA_USER) {
-		window.botpress.updateUser({
-			name: window.PFA_USER.name, // Top-level name property
+window.botpress.on("webchat:ready", async () => {
+	if (!window.PFA_USER) return;
+
+	const user = window.PFA_USER;
+
+	try {
+		await window.botpress.updateUser({
+			name: user.name,
 			data: {
-				company: window.PFA_USER.company,
-				roles: window.PFA_USER.roles,
+				firstName: user.firstName,
+				company: user.company,
+				roles: user.roles,
+				regions: user.regions,
 			},
 		});
-	}
 
-	// 2. Send initial page snapshot
-	window.botpress.sendEvent({
-		type: "page_snapshot",
-		payload: getDOMSnapshot(),
-	});
+		// Tell Botpress that the user's details are available.
+		await window.botpress.sendEvent({
+			type: "pfa_user_ready",
+		});
+
+		await window.botpress.sendEvent({
+			type: "page_snapshot",
+			payload: getDOMSnapshot(),
+		});
+	} catch (error) {
+		console.error("PFA Help Bot V2: initialisation failed.", error);
+	}
 });
 
 // Listen for element highlighting commands sent from Botpress
