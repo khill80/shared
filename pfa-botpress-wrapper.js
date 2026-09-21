@@ -201,11 +201,7 @@ window.botpress.on("webchat:ready", async () => {
 		// Tell Botpress that the user's details are available.
 		await window.botpress.sendEvent({
 			type: "pfa_user_ready",
-		});
-
-		await window.botpress.sendEvent({
-			type: "page_snapshot",
-			payload: getDOMSnapshot(),
+			pageContext: getDOMSnapshot(),
 		});
 	} catch (error) {
 		console.error("PFA Help Bot V2: initialisation failed.", error);
