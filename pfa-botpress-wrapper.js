@@ -1,9 +1,22 @@
-// Function to capture dynamic DOM context on page load
 function getDetailedDOMSnapshot() {
 	const clean = (value) =>
 		String(value ?? "")
 			.replace(/\s+/g, " ")
 			.trim();
+
+	const navSelector = 'nav, [role="navigation"], .navbar';
+	const boxSelector = '[data-ai-role="databox"], .databox';
+
+	const visible = (el) => {
+		const style = getComputedStyle(el);
+
+		return (
+			el.getClientRects().length > 0 &&
+			style.visibility !== "hidden" &&
+			style.visibility !== "collapse" &&
+			!el.closest("[hidden]")
+		);
+	};
 
 	const referencedText = (ids) =>
 		clean(
@@ -14,6 +27,7 @@ function getDetailedDOMSnapshot() {
 				.join(" "),
 		);
 
+	// Do not use a select's option text as the control's label.
 	const label = (el) =>
 		clean(el.getAttribute("data-ai-label")) ||
 		referencedText(el.getAttribute("aria-labelledby")) ||
@@ -23,28 +37,54 @@ function getDetailedDOMSnapshot() {
 				.map((x) => x.textContent)
 				.join(" "),
 		) ||
-		clean(el.innerText || el.textContent) ||
+		(el.matches("input, select, textarea")
+			? ""
+			: clean(el.innerText || el.textContent)) ||
 		clean(el.getAttribute("title")) ||
 		clean(el.getAttribute("placeholder")) ||
 		el.getAttribute("name") ||
 		el.id ||
 		"";
 
-	const visible = (el) => {
-		const style = getComputedStyle(el);
+	const boxes = Array.from(document.querySelectorAll(boxSelector)).filter(
+		visible,
+	);
+
+	// Find a heading belonging to this box, not a nested box.
+	const boxHeading = (box) =>
+		Array.from(
+			box.querySelectorAll('.databox-head, [data-ai-role="section"], h1, h2, h3'),
+		).find((el) => el.closest(boxSelector) === box);
+
+	const boxTitle = (box) => {
+		const heading = boxHeading(box);
+
 		return (
-			el.getClientRects().length > 0 &&
-			style.visibility !== "hidden" &&
-			style.visibility !== "collapse"
+			clean(box.getAttribute("data-ai-label")) ||
+			referencedText(box.getAttribute("aria-labelledby")) ||
+			clean(box.getAttribute("aria-label")) ||
+			(heading ? label(heading) : "") ||
+			box.id ||
+			"Untitled databox"
 		);
+	};
+
+	const sectionFor = (el) => {
+		const box = el.closest(boxSelector);
+		const index = boxes.indexOf(box);
+
+		return index >= 0 ? `databox-${index + 1}` : null;
 	};
 
 	const describe = (el) => ({
 		label: label(el),
+		aiLabel: el.getAttribute("data-ai-label"),
+		aiRole: el.getAttribute("data-ai-role"),
 		id: el.id || null,
 		name: el.getAttribute("name"),
 		tag: el.tagName.toLowerCase(),
 		role: el.getAttribute("role"),
+		section: sectionFor(el),
 		visible: visible(el),
 		disabled:
 			el.matches(":disabled") || !!el.closest('[aria-disabled="true"], [inert]'),
@@ -55,13 +95,9 @@ function getDetailedDOMSnapshot() {
 		ariaHaspopup: el.getAttribute("aria-haspopup"),
 	});
 
-	const navSelector = 'nav, [role="navigation"], .navbar';
-	const navRoots = Array.from(document.querySelectorAll(navSelector)).filter(
-		(el) => !el.parentElement?.closest(navSelector),
-	);
-
 	const menuParent = (el) => {
 		const menu = el.parentElement?.closest('.dropdown-menu, [role="menu"]');
+
 		if (!menu) return null;
 
 		const controller = menu.id
@@ -96,19 +132,93 @@ function getDetailedDOMSnapshot() {
 		}
 	};
 
+	const navRoots = Array.from(document.querySelectorAll(navSelector)).filter(
+		(el) => !el.parentElement?.closest(navSelector),
+	);
+
+	const inputElements = Array.from(
+		document.querySelectorAll('input:not([type="hidden"]), select, textarea'),
+	).filter(visible);
+
+	const buttonElements = Array.from(
+		document.querySelectorAll('button, .btn, [role="button"]'),
+	).filter(
+		(el) =>
+			visible(el) && !el.closest(navSelector) && el.id !== "pfa-help-launcher",
+	);
+
+	const describeInput = (el) => {
+		const result = {
+			...describe(el),
+			type: el.type || el.getAttribute("type"),
+			required: el.required || el.getAttribute("aria-required") === "true",
+		};
+
+		if (el.tagName === "SELECT") {
+			const options = Array.from(el.options);
+
+			result.multiple = el.multiple;
+			result.selected = options
+				.filter((option) => option.selected)
+				.map((option) => clean(option.label));
+
+			result.options = options.slice(0, 100).map((option) => ({
+				label: clean(option.label),
+				selected: option.selected,
+				disabled: option.disabled || !!option.closest("optgroup[disabled]"),
+				group:
+					option.parentElement?.tagName === "OPTGROUP"
+						? option.parentElement.label
+						: null,
+			}));
+
+			result.optionCount = options.length;
+			result.optionsTruncated = options.length > 100;
+		}
+
+		// No text-input or textarea values are collected.
+		return result;
+	};
+
 	return {
 		url: location.pathname,
 		capturedAt: new Date().toISOString(),
 		title: document.title,
 
-		headings: Array.from(document.querySelectorAll("h1, h2, h3"))
+		headings: Array.from(
+			document.querySelectorAll(
+				'h1, h2, h3, .databox-head, [data-ai-role="section"]',
+			),
+		)
 			.filter(visible)
-			.map((el) => clean(el.textContent))
-			.filter(Boolean)
-			.slice(0, 50),
+			.map((el) => ({
+				label: label(el),
+				aiLabel: el.getAttribute("data-ai-label"),
+				id: el.id || null,
+				section: sectionFor(el),
+			}))
+			.filter((item) => item.label)
+			.slice(0, 100),
+
+		databoxes: boxes.map((box, index) => {
+			const heading = boxHeading(box);
+
+			return {
+				ref: `databox-${index + 1}`,
+				title: boxTitle(box),
+				id: box.id || null,
+				aiLabel: box.getAttribute("data-ai-label"),
+				heading: heading
+					? {
+							label: label(heading),
+							aiLabel: heading.getAttribute("data-ai-label"),
+							id: heading.id || null,
+						}
+					: null,
+			};
+		}),
 
 		navigation: navRoots.map((nav) => ({
-			label: label(nav).slice(0, 120),
 			items: Array.from(
 				nav.querySelectorAll('a, button, [role="menuitem"], [role="button"]'),
 			).map((el) => ({
@@ -118,37 +228,17 @@ function getDetailedDOMSnapshot() {
 			})),
 		})),
 
-		inputs: Array.from(
-			document.querySelectorAll('input:not([type="hidden"]), select, textarea'),
-		)
-			.filter(visible)
-			.map((el) => ({
-				...describe(el),
-				type: el.getAttribute("type"),
-				required: el.required || el.getAttribute("aria-required") === "true",
-			}))
-			.slice(0, 200),
+		inputs: inputElements.slice(0, 200).map(describeInput),
+		buttons: buttonElements.slice(0, 200).map(describe),
 
-		buttons: Array.from(
-			document.querySelectorAll('button, .btn, [role="button"]'),
-		)
-			.filter(
-				(el) =>
-					visible(el) && !el.closest(navSelector) && el.id !== "pfa-help-launcher",
-			)
-			.map(describe)
-			.slice(0, 200),
+		truncated: {
+			inputs: inputElements.length > 200,
+			buttons: buttonElements.length > 200,
+		},
 	};
 }
 
 function getDOMSnapshot() {
-	const snapshot = getDetailedDOMSnapshot();
-
-	// Remove the navbar label that repeats its menu contents.
-	snapshot.navigation = snapshot.navigation.map((nav) => ({
-		items: nav.items,
-	}));
-
 	function compact(value) {
 		if (Array.isArray(value)) {
 			return value.map(compact);
@@ -162,9 +252,14 @@ function getDOMSnapshot() {
 							return false;
 						}
 
-						// These omitted states mean false.
 						if (
-							["disabled", "ariaHidden", "required"].includes(key) &&
+							[
+								"disabled",
+								"ariaHidden",
+								"required",
+								"multiple",
+								"optionsTruncated",
+							].includes(key) &&
 							val === false
 						) {
 							return false;
@@ -179,7 +274,7 @@ function getDOMSnapshot() {
 		return value;
 	}
 
-	return compact(snapshot);
+	return compact(getDetailedDOMSnapshot());
 }
 
 // Fire events once Botpress v3 Webchat is loaded and active
