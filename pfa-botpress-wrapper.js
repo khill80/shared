@@ -15,6 +15,7 @@ function getDetailedDOMSnapshot() {
 		);
 
 	const label = (el) =>
+		clean(el.getAttribute("data-ai-label")) ||
 		referencedText(el.getAttribute("aria-labelledby")) ||
 		clean(el.getAttribute("aria-label")) ||
 		clean(
