@@ -369,14 +369,145 @@ window.botpress.on("webchat:ready", async () => {
 		const style = document.createElement("style");
 		style.id = "pfa-highlight-style";
 		style.textContent = `
-			.pfa-ai-highlight {
-				outline: 4px solid #0077cc !important;
-				outline-offset: 3px !important;
-				box-shadow: 0 0 0 7px rgba(0,119,204,.22) !important;
-			}
-		`;
+	        .pfa-ai-highlight {
+		        outline: 3px solid #38bdf8 !important;
+		        outline-offset: 4px !important;
+	        }
+        `;
 		document.head.appendChild(style);
 	}
+
+	// Dim the page while leaving the target and Botpress chat clear.
+	const svgNS = "http://www.w3.org/2000/svg";
+	let spotlight = null;
+	let spotlightFrame = null;
+
+	const svgElement = (name, attributes = {}) => {
+		const el = document.createElementNS(svgNS, name);
+
+		for (const [key, value] of Object.entries(attributes)) {
+			el.setAttribute(key, String(value));
+		}
+
+		return el;
+	};
+
+	const stopSpotlight = () => {
+		cancelAnimationFrame(spotlightFrame);
+		spotlightFrame = null;
+		spotlight?.remove();
+		spotlight = null;
+	};
+
+	const startSpotlight = (target) => {
+		stopSpotlight();
+
+		const maskId = `pfa-spotlight-${Date.now()}`;
+
+		spotlight = svgElement("svg", {
+			"aria-hidden": "true",
+			focusable: "false",
+		});
+
+		Object.assign(spotlight.style, {
+			position: "fixed",
+			inset: "0",
+			width: "100%",
+			height: "100%",
+			zIndex: "2147483647",
+			pointerEvents: "none",
+		});
+
+		const defs = svgElement("defs");
+		const mask = svgElement("mask", {
+			id: maskId,
+			maskUnits: "userSpaceOnUse",
+			maskContentUnits: "userSpaceOnUse",
+			x: 0,
+			y: 0,
+		});
+
+		const background = svgElement("rect", { fill: "white" });
+		const holes = svgElement("g", { fill: "black" });
+
+		mask.append(background, holes);
+		defs.append(mask);
+
+		const shade = svgElement("rect", {
+			fill: "black",
+			"fill-opacity": "0.45",
+			mask: `url(#${maskId})`,
+		});
+
+		spotlight.append(defs, shade);
+		document.body.append(spotlight);
+
+		const update = () => {
+			if (!spotlight || !target.isConnected) {
+				stopSpotlight();
+				return;
+			}
+
+			const width = window.innerWidth;
+			const height = window.innerHeight;
+
+			for (const el of [mask, background, shade]) {
+				el.setAttribute("width", width);
+				el.setAttribute("height", height);
+			}
+
+			// Find Botpress's chat and launcher on the host page.
+			// Reading iframe contents is not required.
+			const chatElements = [
+				...document.querySelectorAll(".bpWebchat, .bpFab"),
+				...Array.from(document.querySelectorAll("iframe")).filter((frame) => {
+					const description = [
+						frame.src,
+						frame.title,
+						frame.id,
+						frame.className,
+					].join(" ");
+
+					return /botpress|webchat/i.test(description);
+				}),
+			];
+
+			const clearAreas = [
+				{ element: target, padding: 9 },
+				...chatElements.map((element) => ({ element, padding: 3 })),
+			];
+
+			holes.replaceChildren();
+
+			for (const { element, padding } of clearAreas) {
+				const rect = element.getBoundingClientRect();
+				const style = getComputedStyle(element);
+
+				if (
+					!rect.width ||
+					!rect.height ||
+					style.visibility === "hidden" ||
+					style.display === "none"
+				) {
+					continue;
+				}
+
+				holes.append(
+					svgElement("rect", {
+						x: rect.left - padding,
+						y: rect.top - padding,
+						width: rect.width + padding * 2,
+						height: rect.height + padding * 2,
+						rx: 8,
+					}),
+				);
+			}
+
+			spotlightFrame = requestAnimationFrame(update);
+		};
+
+		update();
+	};
 
 	let activeElement = null;
 	let timer = null;
@@ -435,17 +566,20 @@ window.botpress.on("webchat:ready", async () => {
 		const el = matches[0];
 		activeElement = el;
 
-		el.classList.add("pfa-ai-highlight");
-		el.scrollIntoView({
-			behavior: "instant",
-			block: "nearest",
-			inline: "nearest",
-		});
+        el.classList.add("pfa-ai-highlight");
+        el.scrollIntoView({
+            behavior: "instant",
+            block: "nearest",
+            inline: "nearest"
+        });
 
-		timer = setTimeout(() => {
-			el.classList.remove("pfa-ai-highlight");
-			if (activeElement === el) activeElement = null;
-		}, 4000);
+        startSpotlight(el);
+
+        timer = setTimeout(() => {
+            stopSpotlight();
+            el.classList.remove("pfa-ai-highlight");
+            if (activeElement === el) activeElement = null;
+        }, 4000);
 
 		return true;
 	};
@@ -457,4 +591,4 @@ window.botpress.on("webchat:ready", async () => {
 		const success = window.pfaHighlight(event);
 		console.log("PFA highlight displayed:", success);
 	});
-})();
+};)();
