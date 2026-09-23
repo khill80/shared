@@ -304,16 +304,157 @@ window.botpress.on("webchat:ready", async () => {
 	}
 });
 
-// Listen for element highlighting commands sent from Botpress
-window.botpress.on("customEvent", (event) => {
-	if (event.action === "highlight" && event.elementId) {
-		const el =
-			document.getElementById(event.elementId) ||
-			document.querySelector(`[name="${event.elementId}"]`);
-		if (el) {
-			el.classList.add("botpress-highlight-glow");
-			el.scrollIntoView({ behavior: "smooth", block: "center" });
-			setTimeout(() => el.classList.remove("botpress-highlight-glow"), 5000);
-		}
+// Highlight page elements using data-ai-label or navbar text.
+(() => {
+	const clean = (value) =>
+		String(value ?? "")
+			.replace(/\s+/g, " ")
+			.trim();
+
+	const navSelector = 'nav, [role="navigation"], .navbar';
+
+	const referencedText = (ids) =>
+		clean(
+			String(ids ?? "")
+				.split(/\s+/)
+				.filter(Boolean)
+				.map((id) => document.getElementById(id)?.textContent ?? "")
+				.join(" "),
+		);
+
+	const label = (el) =>
+		clean(el.getAttribute("data-ai-label")) ||
+		referencedText(el.getAttribute("aria-labelledby")) ||
+		clean(el.getAttribute("aria-label")) ||
+		clean(el.innerText || el.textContent);
+
+	const parentMenu = (el) => {
+		const menu = el.parentElement?.closest('.dropdown-menu, [role="menu"]');
+
+		if (!menu) return "";
+
+		const controller = menu.id
+			? Array.from(document.querySelectorAll("[aria-controls]")).find((control) =>
+					(control.getAttribute("aria-controls") || "")
+						.split(/\s+/)
+						.includes(menu.id),
+				)
+			: null;
+
+		const toggle =
+			controller ||
+			menu.parentElement?.querySelector(
+				":scope > .dropdown-toggle, :scope > [aria-haspopup]",
+			);
+
+		return (
+			referencedText(menu.getAttribute("aria-labelledby")) ||
+			(toggle ? label(toggle) : "")
+		);
+	};
+
+	const visible = (el) => {
+		const style = getComputedStyle(el);
+
+		return (
+			el.isConnected &&
+			el.getClientRects().length > 0 &&
+			style.visibility !== "hidden" &&
+			style.visibility !== "collapse" &&
+			!el.closest('[hidden], [aria-hidden="true"], [inert]')
+		);
+	};
+
+	if (!document.getElementById("pfa-highlight-style")) {
+		const style = document.createElement("style");
+		style.id = "pfa-highlight-style";
+		style.textContent = `
+			.pfa-ai-highlight {
+				outline: 4px solid #0077cc !important;
+				outline-offset: 3px !important;
+				box-shadow: 0 0 0 7px rgba(0,119,204,.22) !important;
+			}
+		`;
+		document.head.appendChild(style);
 	}
-});
+
+	let activeElement = null;
+	let timer = null;
+
+	window.pfaHighlight = (request) => {
+		if (!request || typeof request !== "object") return false;
+
+		if (request.page && request.page !== location.pathname) {
+			console.warn("PFA highlight: request is for another page.");
+			return false;
+		}
+
+		if (typeof request.label !== "string" || !clean(request.label)) {
+			console.warn("PFA highlight: missing target label.");
+			return false;
+		}
+
+		let matches = [];
+
+		if (request.by === "aiLabel") {
+			matches = Array.from(document.querySelectorAll("[data-ai-label]")).filter(
+				(el) => clean(el.getAttribute("data-ai-label")) === clean(request.label),
+			);
+
+			if (request.aiRole) {
+				matches = matches.filter(
+					(el) => el.getAttribute("data-ai-role") === request.aiRole,
+				);
+			}
+		} else if (request.by === "navText") {
+			matches = Array.from(
+				document.querySelectorAll('a, button, [role="menuitem"], [role="button"]'),
+			).filter(
+				(el) =>
+					el.closest(navSelector) &&
+					clean(el.innerText || el.textContent) === clean(request.label) &&
+					(request.parentMenu === undefined ||
+						parentMenu(el) === clean(request.parentMenu)),
+			);
+		}
+
+		matches = matches.filter(visible);
+
+		if (matches.length !== 1) {
+			console.warn(
+				"PFA highlight: expected one visible match.",
+				request,
+				matches.length,
+			);
+			return false;
+		}
+
+		clearTimeout(timer);
+		activeElement?.classList.remove("pfa-ai-highlight");
+
+		const el = matches[0];
+		activeElement = el;
+
+		el.classList.add("pfa-ai-highlight");
+		el.scrollIntoView({
+			behavior: "instant",
+			block: "nearest",
+			inline: "nearest",
+		});
+
+		timer = setTimeout(() => {
+			el.classList.remove("pfa-ai-highlight");
+			if (activeElement === el) activeElement = null;
+		}, 4000);
+
+		return true;
+	};
+
+	window.botpress.on("customEvent", (event) => {
+		if (event?.action !== "highlight") return;
+
+		console.log("PFA highlight request:", event);
+		const success = window.pfaHighlight(event);
+		console.log("PFA highlight displayed:", success);
+	});
+})();
