@@ -566,20 +566,20 @@ window.botpress.on("webchat:ready", async () => {
 		const el = matches[0];
 		activeElement = el;
 
-        el.classList.add("pfa-ai-highlight");
-        el.scrollIntoView({
-            behavior: "instant",
-            block: "nearest",
-            inline: "nearest"
-        });
+		el.classList.add("pfa-ai-highlight");
+		el.scrollIntoView({
+			behavior: "instant",
+			block: "nearest",
+			inline: "nearest",
+		});
 
-        startSpotlight(el);
+		startSpotlight(el);
 
-        timer = setTimeout(() => {
-            stopSpotlight();
-            el.classList.remove("pfa-ai-highlight");
-            if (activeElement === el) activeElement = null;
-        }, 4000);
+		timer = setTimeout(() => {
+			stopSpotlight();
+			el.classList.remove("pfa-ai-highlight");
+			if (activeElement === el) activeElement = null;
+		}, 4000);
 
 		return true;
 	};
@@ -591,4 +591,4 @@ window.botpress.on("webchat:ready", async () => {
 		const success = window.pfaHighlight(event);
 		console.log("PFA highlight displayed:", success);
 	});
-};)();
+})();
